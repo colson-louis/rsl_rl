@@ -254,7 +254,6 @@ class Runner:
                 for _ in range(self._num_steps_per_env):
                     self._collect()
 
-                print("nb returns: ", len(self._episode_statistics["returns"]))
                 self._episode_statistics["lengths"] = self._episode_statistics["lengths"][-return_epochs:]
                 self._episode_statistics["returns"] = self._episode_statistics["returns"][-return_epochs:]
 
@@ -331,6 +330,7 @@ class Runner:
 
         completed_lengths = self._current_episode_lengths[dones_idx][:, 0].cpu()
         completed_returns = self._current_cumulative_rewards[dones_idx][:, 0].cpu()
+
         self._episode_statistics["lengths"].extend(completed_lengths.tolist())
         self._episode_statistics["returns"].extend(completed_returns.tolist())
         self._current_episode_lengths[dones_idx] = 0.0
