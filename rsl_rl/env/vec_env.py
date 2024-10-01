@@ -44,11 +44,6 @@ class VecEnv(ABC):
         pass
 
     @abstractmethod
-    def get_privileged_observations(self) -> Union[torch.Tensor, None]:
-        """Return privileged observations."""
-        pass
-
-    @abstractmethod
     def step(
         self, actions: torch.Tensor
     ) -> Tuple[torch.Tensor, Union[torch.Tensor, None], torch.Tensor, torch.Tensor, Dict[str, Any]]:

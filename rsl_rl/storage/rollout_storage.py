@@ -51,6 +51,7 @@ class RolloutStorage(ReplayStorage):
 
         total_size = self._env_count if trajectories else self._size * self._env_count
         batch_size = total_size // batch_count
+
         indices = torch.randperm(total_size)
 
         assert batch_size > 0, "Batch count is too large."

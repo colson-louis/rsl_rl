@@ -61,6 +61,7 @@ class Runner:
         evaluation_cb: List[Callback] = None,
         learn_cb: List[Callback] = None,
         observation_history_length: int = 1,
+        num_steps_per_env: int = 1,
         **kwargs,
     ) -> None:
         """
@@ -80,8 +81,7 @@ class Runner:
         self._obs_hist_len = observation_history_length
         self._learn_cb = learn_cb if learn_cb else []
         self._eval_cb = evaluation_cb if evaluation_cb else []
-
-        self._set_kwarg(kwargs, "num_steps_per_env", default=1)
+        self._num_steps_per_env = num_steps_per_env
 
         self._current_learning_iteration = 0
         self._git_status_repos = [rsl_rl.__file__]
