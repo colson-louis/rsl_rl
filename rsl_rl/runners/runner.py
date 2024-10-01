@@ -62,6 +62,8 @@ class Runner:
         learn_cb: List[Callback] = None,
         observation_history_length: int = 1,
         num_steps_per_env: int = 1,
+        save_interval: int = None,
+        log_dir: str = None,
         **kwargs,
     ) -> None:
         """
@@ -82,6 +84,10 @@ class Runner:
         self._learn_cb = learn_cb if learn_cb else []
         self._eval_cb = evaluation_cb if evaluation_cb else []
         self._num_steps_per_env = num_steps_per_env
+        self._save_interval = save_interval
+        self._log_dir = log_dir
+        assert self._save_interval is None or self._log_dir is not None, "Save interval requires log directory."
+
 
         self._current_learning_iteration = 0
         self._git_status_repos = [rsl_rl.__file__]
@@ -248,6 +254,7 @@ class Runner:
                 for _ in range(self._num_steps_per_env):
                     self._collect()
 
+                print("nb returns: ", len(self._episode_statistics["returns"]))
                 self._episode_statistics["lengths"] = self._episode_statistics["lengths"][-return_epochs:]
                 self._episode_statistics["returns"] = self._episode_statistics["returns"][-return_epochs:]
 
@@ -280,6 +287,9 @@ class Runner:
 
             self._episode_statistics["info"].clear()
             self._current_learning_iteration = self._episode_statistics["current_iteration"]
+
+            if self._save_interval is not None and self._current_learning_iteration % self._save_interval == 0:
+                self.save(os.path.join(self._log_dir, f"checkpoint_{self._current_learning_iteration}.pt"))
 
     def _collect(self) -> None:
         """Runs a single step in the environment to collect a transition and stores it in the dataset.
