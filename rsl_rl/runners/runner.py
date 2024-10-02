@@ -11,6 +11,7 @@ import rsl_rl
 from rsl_rl.storage.storage import Dataset
 from rsl_rl.algorithms import Agent
 from rsl_rl.env import VecEnv
+from rsl_rl.utils.wandb_utils import WandbSummaryWriter
 
 
 class EpisodeStatistics(TypedDict):
@@ -64,6 +65,7 @@ class Runner:
         num_steps_per_env: int = 1,
         save_interval: int = None,
         log_dir: str = None,
+        logger: bool = False,  # TODO complete this functionality
         **kwargs,
     ) -> None:
         """
@@ -86,8 +88,12 @@ class Runner:
         self._num_steps_per_env = num_steps_per_env
         self._save_interval = save_interval
         self._log_dir = log_dir
-        assert self._save_interval is None or self._log_dir is not None, "Save interval requires log directory."
+        self._logger = logger
 
+        if logger:
+            self.writer = WandbSummaryWriter(log_dir=self._log_dir, flush_secs=10, cfg={"wandb_project": "isaaclab"})
+
+        assert self._save_interval is None or self._log_dir is not None, "Save interval requires log directory."
 
         self._current_learning_iteration = 0
         self._git_status_repos = [rsl_rl.__file__]
@@ -207,7 +213,8 @@ class Runner:
         return self.agent.get_inference_policy(device)
 
     def learn(
-        self, iterations: Union[int, None] = None, timeout: Union[int, None] = None, return_epochs: int = 100
+        self, iterations: Union[int, None] = None, timeout: Union[int, None] = None, return_epochs: int = 100,
+        init_at_random_ep_len: bool = False
     ) -> None:
         """Runs a number of learning iterations.
 
@@ -235,6 +242,12 @@ class Runner:
             "training_time": 0,
             "update_time": None,
         }
+
+        if init_at_random_ep_len:
+            self.env.episode_length_buf = torch.randint_like(
+                self.env.episode_length_buf, high=int(self.env.max_episode_length)
+            )
+
         self._current_episode_lengths = torch.zeros(self.env.num_envs, dtype=torch.float)
         self._current_cumulative_rewards = torch.zeros(self.env.num_envs, dtype=torch.float)
 
@@ -289,6 +302,9 @@ class Runner:
 
             if self._save_interval is not None and self._current_learning_iteration % self._save_interval == 0:
                 self.save(os.path.join(self._log_dir, f"checkpoint_{self._current_learning_iteration}.pt"))
+
+            if self._logger:
+                self._log_wandb(self.agent, self._episode_statistics)
 
     def _collect(self) -> None:
         """Runs a single step in the environment to collect a transition and stores it in the dataset.
@@ -506,3 +522,26 @@ class Runner:
             print(f"BM {key}:\t{mean/1000000.0:.4f}ms ({count} calls, total {mean*count/1000000.0:.4f}ms)")
 
         self.agent._bm_flush()
+
+    def _log_wandb(self, agent: Agent, stat): # TODO complete this functionality
+        """Logs the progress and statistics of the runner to wandb."""
+        self.writer.add_scalar("Train/mean_reward", np.mean(stat["returns"]), global_step=stat["current_iteration"])
+        self.writer.add_scalar(
+            "Train/mean_episode_length", np.mean(stat["lengths"]), global_step=stat["current_iteration"]
+        )
+
+        for key, value in stat["loss"].items():
+            self.writer.add_scalar(f"Loss/{key}", value, global_step=stat["current_iteration"])
+
+        if stat["timeout"] is not None:
+            self.writer.add_scalar(
+                "Episode_Termination/timeout", stat["training_time"] / stat["timeout"], global_step=stat["current_iteration"]
+            )
+
+        self.writer.add_scalar(
+            "Loss/learning_rate", self.agent.learning_rate, global_step=stat["current_iteration"]
+            )
+        self.writer.add_scalar(
+            "Policy/mean_noise_std", self.agent.actor._log_std.exp().mean(),
+            global_step=stat["current_iteration"]
+            )
