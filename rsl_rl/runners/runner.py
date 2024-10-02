@@ -523,7 +523,7 @@ class Runner:
 
         self.agent._bm_flush()
 
-    def _log_wandb(self, agent: Agent, stat): # TODO complete this functionality
+    def _log_wandb(self, agent: Agent, stat):
         """Logs the progress and statistics of the runner to wandb."""
         self.writer.add_scalar("Train/mean_reward", np.mean(stat["returns"]), global_step=stat["current_iteration"])
         self.writer.add_scalar(

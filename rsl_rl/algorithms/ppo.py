@@ -41,6 +41,7 @@ class PPO(AbstractActorCritic):
         schedule: str = "fixed",
         target_kl: float = 0.01,
         value_coeff: float = 1.0,
+        num_epochs: int = 6,
         **kwargs,
     ):
         """
@@ -73,6 +74,7 @@ class PPO(AbstractActorCritic):
         self._schedule = schedule
         self._target_kl = target_kl
         self._value_coeff = value_coeff
+        self._num_epochs = num_epochs
 
         self._register_serializable(
             "_clip_ratio",
@@ -213,11 +215,15 @@ class PPO(AbstractActorCritic):
 
         assert self.storage.initialized
 
-        total_loss = torch.zeros(self._batch_count)
-        total_surrogate_loss = torch.zeros(self._batch_count)
-        total_value_loss = torch.zeros(self._batch_count)
+        total_loss = torch.zeros(self._batch_count * self._num_epochs)
+        total_surrogate_loss = torch.zeros(self._batch_count * self._num_epochs)
+        total_value_loss = torch.zeros(self._batch_count * self._num_epochs)
 
-        for idx, batch in enumerate(self.storage.batch_generator(self._batch_count, trajectories=self.recurrent)):
+        for idx, batch in enumerate(self.storage.batch_generator(
+            self._batch_count,
+            self._num_epochs,
+            trajectories=self.recurrent)
+        ):
             if self.recurrent:
                 transition_obs = batch["actor_observations"].reshape(*batch["actor_observations"].shape[:2], -1)
                 observations, data = transitions_to_trajectories(transition_obs, batch["dones"])
@@ -260,7 +266,7 @@ class PPO(AbstractActorCritic):
         stats = {
             "total": total_loss.mean().item(),
             "surrogate": total_surrogate_loss.mean().item(),
-            "value": total_value_loss.mean().item(),
+            "value_function": total_value_loss.mean().item(),
         }
 
         return stats
