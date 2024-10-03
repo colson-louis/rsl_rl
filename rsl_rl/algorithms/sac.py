@@ -300,6 +300,7 @@ class SAC(AbstractActorCritic):
             target = rewards + self._discount_factor * (1 - dones) * target_next
 
         critic_input = self._critic_input(critic_obs, actions)
+
         critic_prediction_1 = self.critic_1.forward(critic_input)
         critic_1_loss = nn.functional.mse_loss(critic_prediction_1, target)
 

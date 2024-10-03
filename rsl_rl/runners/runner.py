@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Tuple, TypedDict, Union
 
 import rsl_rl
 from rsl_rl.storage.storage import Dataset
-from rsl_rl.algorithms import Agent
+from rsl_rl.algorithms import Agent, PPO, SAC
 from rsl_rl.env import VecEnv
 from rsl_rl.utils.wandb_utils import WandbSummaryWriter
 
@@ -538,10 +538,22 @@ class Runner:
                 "Episode_Termination/timeout", stat["training_time"] / stat["timeout"], global_step=stat["current_iteration"]
             )
 
-        self.writer.add_scalar(
-            "Loss/learning_rate", self.agent.learning_rate, global_step=stat["current_iteration"]
-            )
-        self.writer.add_scalar(
-            "Policy/mean_noise_std", self.agent.actor._log_std.exp().mean(),
-            global_step=stat["current_iteration"]
-            )
+        if isinstance(self.agent, PPO):
+            self.writer.add_scalar(
+                "Loss/learning_rate", self.agent.learning_rate, global_step=stat["current_iteration"]
+                )
+            self.writer.add_scalar(
+                "Policy/mean_noise_std", self.agent.actor._log_std.exp().mean(),
+                global_step=stat["current_iteration"]
+                )
+
+        if isinstance(self.agent, SAC):
+            self.writer.add_scalar(
+                "Loss/actor_lr", self.agent.actor_optimizer.param_groups[0]["lr"], global_step=stat["current_iteration"]
+                )
+            self.writer.add_scalar(
+                "Loss/critic_lr", self.agent.critic_1_optimizer.param_groups[0]["lr"], global_step=stat["current_iteration"]
+                )
+            self.writer.add_scalar(
+                "Loss/alpha_lr", self.agent.log_alpha_optimizer.param_groups[0]["lr"], global_step=stat["current_iteration"]
+                )
