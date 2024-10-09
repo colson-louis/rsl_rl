@@ -6,6 +6,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.nn.functional import mse_loss, kl_div
 
 from rsl_rl.modules import ActorCritic
 from rsl_rl.storage import RolloutStorage
@@ -29,6 +30,9 @@ class PPO_SMOOTH:
         use_clipped_value_loss=True,
         schedule="fixed",
         desired_kl=0.01,
+        lam_t=1.0,
+        lam_s=1.0,
+        eps_s=1.0,
         device="cpu",
     ):
         self.device = device
@@ -54,6 +58,13 @@ class PPO_SMOOTH:
         self.lam = lam
         self.max_grad_norm = max_grad_norm
         self.use_clipped_value_loss = use_clipped_value_loss
+
+        # PPO smoothness parameters
+        self.lam_t = lam_t
+        self.lam_s = lam_s
+        self.eps_s = eps_s
+        assert self.lam_t > 0.0, "lam_a must be positive"
+        assert self.lam_s > 0.0, "lam_s must be positive"
 
     def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape, action_shape):
         self.storage = RolloutStorage(
@@ -99,6 +110,8 @@ class PPO_SMOOTH:
         self.storage.compute_returns(last_values, self.gamma, self.lam)
 
     def update(self):
+        mean_L_t_loss = 0
+        mean_L_s_loss = 0
         mean_value_loss = 0
         mean_surrogate_loss = 0
         if self.actor_critic.is_recurrent:
@@ -155,6 +168,15 @@ class PPO_SMOOTH:
             )
             surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
 
+            L_t = self.lam_t * mse_loss(mu_batch, old_mu_batch) / mu_batch.size(0)
+            surrogate_loss += L_t
+
+            # sample from the normal distribution
+            obs_bar = torch.normal(mu_batch, self.eps_s)
+            mu_bar = self.actor_critic.act_inference(obs_bar)
+            L_s = self.lam_s * mse_loss(mu_batch, mu_bar) / mu_batch.size(0)
+            surrogate_loss += L_s
+
             # Value function loss
             if self.use_clipped_value_loss:
                 value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(
@@ -174,12 +196,16 @@ class PPO_SMOOTH:
             nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
             self.optimizer.step()
 
+            mean_L_t_loss += L_t.item()
+            mean_L_s_loss += L_s.item()
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
 
         num_updates = self.num_learning_epochs * self.num_mini_batches
+        mean_L_t_loss /= num_updates
+        mean_L_s_loss /= num_updates
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         self.storage.clear()
 
-        return mean_value_loss, mean_surrogate_loss
+        return mean_value_loss, mean_surrogate_loss, mean_L_t_loss, mean_L_s_loss

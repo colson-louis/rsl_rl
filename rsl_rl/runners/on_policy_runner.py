@@ -11,7 +11,8 @@ from collections import deque
 from torch.utils.tensorboard import SummaryWriter as TensorboardSummaryWriter
 
 import rsl_rl
-from rsl_rl.algorithms import PPO
+from rsl_rl.algorithms.ppo import PPO
+from rsl_rl.algorithms.ppo_smooth import PPO_SMOOTH
 from rsl_rl.env import VecEnv
 from rsl_rl.modules import ActorCritic, ActorCriticRecurrent, EmpiricalNormalization
 from rsl_rl.utils import store_code_state
@@ -37,7 +38,7 @@ class OnPolicyRunner:
             num_obs, num_critic_obs, self.env.num_actions, **self.policy_cfg
         ).to(self.device)
         alg_class = eval(self.alg_cfg.pop("class_name"))  # PPO
-        self.alg: PPO = alg_class(actor_critic, device=self.device, **self.alg_cfg)
+        self.alg: PPO | PPO_SMOOTH = alg_class(actor_critic, device=self.device, **self.alg_cfg)
         self.num_steps_per_env = self.cfg["num_steps_per_env"]
         self.save_interval = self.cfg["save_interval"]
         self.empirical_normalization = self.cfg["empirical_normalization"]
@@ -146,7 +147,11 @@ class OnPolicyRunner:
                 start = stop
                 self.alg.compute_returns(critic_obs)
 
-            mean_value_loss, mean_surrogate_loss = self.alg.update()
+            if isinstance(self.alg, PPO_SMOOTH):
+                mean_value_loss, mean_surrogate_loss, mean_L_t_loss, mean_L_s_loss = self.alg.update()
+            else:
+                mean_value_loss, mean_surrogate_loss = self.alg.update()
+
             stop = time.time()
             learn_time = stop - start
             self.current_learning_iteration = it
@@ -194,6 +199,9 @@ class OnPolicyRunner:
         mean_std = self.alg.actor_critic.std.mean()
         fps = int(self.num_steps_per_env * self.env.num_envs / (locs["collection_time"] + locs["learn_time"]))
 
+        if isinstance(self.alg, PPO_SMOOTH):
+            self.writer.add_scalar("Loss/L_t", locs["mean_L_t_loss"], locs["it"])
+            self.writer.add_scalar("Loss/L_s", locs["mean_L_s_loss"], locs["it"])
         self.writer.add_scalar("Loss/value_function", locs["mean_value_loss"], locs["it"])
         self.writer.add_scalar("Loss/surrogate", locs["mean_surrogate_loss"], locs["it"])
         self.writer.add_scalar("Loss/learning_rate", self.alg.learning_rate, locs["it"])
