@@ -30,9 +30,9 @@ class PPO_SMOOTH:
         use_clipped_value_loss=True,
         schedule="fixed",
         desired_kl=0.01,
-        lam_t=1.0,
-        lam_s=1.0,
-        eps_s=1.0,
+        lam_t=0.01,
+        lam_s=0.02,
+        eps_s=0.0025,
         device="cpu",
     ):
         self.device = device
@@ -112,6 +112,7 @@ class PPO_SMOOTH:
     def update(self):
         mean_L_t_loss = 0
         mean_L_s_loss = 0
+        mean_entropy_loss = 0
         mean_value_loss = 0
         mean_surrogate_loss = 0
         if self.actor_critic.is_recurrent:
@@ -168,11 +169,12 @@ class PPO_SMOOTH:
             )
             surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
 
+            # L_t regularization
             L_t = self.lam_t * mse_loss(mu_batch, old_mu_batch) / mu_batch.size(0)
             surrogate_loss += L_t
 
-            # sample from the normal distribution
-            obs_bar = torch.normal(mu_batch, self.eps_s)
+            # L_s regularization
+            obs_bar = torch.normal(obs_batch, self.eps_s)
             mu_bar = self.actor_critic.act_inference(obs_bar)
             L_s = self.lam_s * mse_loss(mu_batch, mu_bar) / mu_batch.size(0)
             surrogate_loss += L_s
@@ -198,14 +200,16 @@ class PPO_SMOOTH:
 
             mean_L_t_loss += L_t.item()
             mean_L_s_loss += L_s.item()
+            mean_entropy_loss += self.entropy_coef * entropy_batch.mean().item()
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
 
         num_updates = self.num_learning_epochs * self.num_mini_batches
         mean_L_t_loss /= num_updates
         mean_L_s_loss /= num_updates
+        mean_entropy_loss /= num_updates
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         self.storage.clear()
 
-        return mean_value_loss, mean_surrogate_loss, mean_L_t_loss, mean_L_s_loss
+        return mean_value_loss, mean_surrogate_loss, mean_L_t_loss, mean_L_s_loss, mean_entropy_loss
