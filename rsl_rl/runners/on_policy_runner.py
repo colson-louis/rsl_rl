@@ -150,7 +150,7 @@ class OnPolicyRunner:
             if isinstance(self.alg, PPO_SMOOTH):
                 mean_value_loss, mean_surrogate_loss, mean_L_t_loss, mean_L_s_loss, mean_entropy_loss = self.alg.update()
             else:
-                mean_value_loss, mean_surrogate_loss = self.alg.update()
+                mean_value_loss, mean_surrogate_loss, mean_entropy_loss = self.alg.update()
 
             stop = time.time()
             learn_time = stop - start
@@ -202,9 +202,9 @@ class OnPolicyRunner:
         if isinstance(self.alg, PPO_SMOOTH):
             self.writer.add_scalar("Loss/L_t", locs["mean_L_t_loss"], locs["it"])
             self.writer.add_scalar("Loss/L_s", locs["mean_L_s_loss"], locs["it"])
-            self.writer.add_scalar("Loss/entropy", locs["mean_entropy_loss"], locs["it"])
         self.writer.add_scalar("Loss/value_function", locs["mean_value_loss"], locs["it"])
         self.writer.add_scalar("Loss/surrogate", locs["mean_surrogate_loss"], locs["it"])
+        self.writer.add_scalar("Loss/entropy", locs["mean_entropy_loss"], locs["it"])
         self.writer.add_scalar("Loss/learning_rate", self.alg.learning_rate, locs["it"])
         self.writer.add_scalar("Policy/mean_noise_std", mean_std.item(), locs["it"])
         self.writer.add_scalar("Perf/total_fps", fps, locs["it"])
