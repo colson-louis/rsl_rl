@@ -141,7 +141,7 @@ class PPO:
                     kl_mean = torch.mean(kl)
 
                     if kl_mean > self.desired_kl * 2.0:
-                        self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+                        self.learning_rate = max(7e-6, self.learning_rate / 1.5)
                     elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
                         self.learning_rate = min(1e-2, self.learning_rate * 1.5)
 
@@ -167,8 +167,8 @@ class PPO:
             else:
                 value_loss = (returns_batch - value_batch).pow(2).mean()
 
-            loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
-
+            entropy_loss = self.entropy_coef * entropy_batch.mean()
+            loss = surrogate_loss + self.value_loss_coef * value_loss - entropy_loss
             # Gradient step
             self.optimizer.zero_grad()
             loss.backward()
@@ -177,7 +177,7 @@ class PPO:
 
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
-            mean_entropy_loss += self.entropy_coef * entropy_batch.mean().item()
+            mean_entropy_loss -= entropy_loss.item()
 
         num_updates = self.num_learning_epochs * self.num_mini_batches
         mean_value_loss /= num_updates
