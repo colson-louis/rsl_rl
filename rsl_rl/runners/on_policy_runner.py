@@ -110,13 +110,13 @@ class OnPolicyRunner:
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
                     actions = self.alg.act(obs, critic_obs)
-                    obs, rewards, dones, infos = self.env.step(actions.to(self.env.device))
+                    obs, rewards, terminated, env_reset, infos = self.env.step(actions.to(self.env.device))
                     # move to the right device
-                    obs, critic_obs, rewards, dones = (
+                    obs, critic_obs, rewards, terminated = (
                         obs.to(self.device),
                         critic_obs.to(self.device),
                         rewards.to(self.device),
-                        dones.to(self.device),
+                        terminated.to(self.device),
                     )
                     # perform normalization
                     obs = self.obs_normalizer(obs)
@@ -125,7 +125,7 @@ class OnPolicyRunner:
                     else:
                         critic_obs = obs
                     # process the step
-                    self.alg.process_env_step(rewards, dones, infos)
+                    self.alg.process_env_step(rewards, terminated, infos)
 
                     if self.log_dir is not None:
                         # Book keeping
@@ -137,7 +137,7 @@ class OnPolicyRunner:
                             ep_infos.append(infos["log"])
                         cur_reward_sum += rewards
                         cur_episode_length += 1
-                        new_ids = (dones > 0).nonzero(as_tuple=False)
+                        new_ids = (terminated + env_reset).ge(1.0).nonzero(as_tuple=False)  # changed for CaT NOT WORKING TODO SOLVE THIS
                         rewbuffer.extend(cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
                         lenbuffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
                         cur_reward_sum[new_ids] = 0
