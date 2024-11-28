@@ -137,7 +137,7 @@ class OnPolicyRunner:
                             ep_infos.append(infos["log"])
                         cur_reward_sum += rewards
                         cur_episode_length += 1
-                        new_ids = (terminated + env_reset).ge(1.0).nonzero(as_tuple=False)  # changed for CaT NOT WORKING TODO SOLVE THIS
+                        new_ids = (terminated + env_reset).ge(1.0).nonzero(as_tuple=False)
                         rewbuffer.extend(cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
                         lenbuffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
                         cur_reward_sum[new_ids] = 0
