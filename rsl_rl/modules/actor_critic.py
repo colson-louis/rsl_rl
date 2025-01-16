@@ -8,8 +8,6 @@ import torch
 import torch.nn as nn
 from torch.distributions import Normal
 
-# torch.set_default_dtype(torch.float64)
-
 
 class ActorCritic(nn.Module):
     is_recurrent = False
@@ -46,9 +44,7 @@ class ActorCritic(nn.Module):
             else:
                 actor_layers.append(nn.Linear(actor_hidden_dims[layer_index], actor_hidden_dims[layer_index + 1]))
                 actor_layers.append(activation)
-
         self.actor = nn.Sequential(*actor_layers)
-        self.actor.double()
 
         # Value function
         critic_layers = []
@@ -61,7 +57,6 @@ class ActorCritic(nn.Module):
                 critic_layers.append(nn.Linear(critic_hidden_dims[layer_index], critic_hidden_dims[layer_index + 1]))
                 critic_layers.append(activation)
         self.critic = nn.Sequential(*critic_layers)
-        self.critic.double()
 
         print(f"Actor MLP: {self.actor}")
         print(f"Critic MLP: {self.critic}")
