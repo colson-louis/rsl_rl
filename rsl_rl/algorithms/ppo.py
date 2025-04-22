@@ -41,7 +41,7 @@ class PPO:
         self.actor_critic = actor_critic
         self.actor_critic.to(self.device)
         self.storage = None  # initialized later
-        self.optimizer = optim.AdamW(self.actor_critic.parameters(), lr=learning_rate)
+        self.optimizer = optim.AdamW(self.actor_critic.parameters(), lr=learning_rate, weight_decay=1e-5)
         self.transition = RolloutStorage.Transition()
 
         # PPO parameters

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-from torch.distributions import Normal
+from torch.distributions import Normal, Beta
 
 
 class ActorCritic(nn.Module):
