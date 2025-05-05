@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch.distributions import Normal
 
 
-class ActorCritic(nn.Module):
+class ActorCriticSG(nn.Module):
     is_recurrent = False
 
     def __init__(
@@ -40,7 +40,7 @@ class ActorCritic(nn.Module):
 
         print(f"Actor MLP: {self.actor}")
         print(f"Critic MLP: {self.critic}")
-        print("Distribution: Normal")
+        print("Distribution: Squashed Gaussian")
 
         # Action noise
         self.log_std = nn.Parameter(torch.ones(num_actions) * torch.log(torch.tensor(init_noise_std)))
@@ -78,17 +78,22 @@ class ActorCritic(nn.Module):
     def entropy(self):
         return self.distribution.entropy().sum(dim=-1)
 
-    def update_distribution(self, observations):
+    def update_distribution(self, observations):  # squashed guassian as done in SAC
         mean = self.actor(observations)
         std = torch.exp(self.log_std)
         self.distribution = Normal(mean, mean * 0.0 + std)
 
     def act(self, observations, **kwargs):
         self.update_distribution(observations)
-        return self.distribution.sample()
+        sampled = torch.tanh(self.distribution.rsample())  # -> squashed Gaussian to [-1, 1]
+        return sampled
 
     def get_actions_log_prob(self, actions):
-        return self.distribution.log_prob(actions).sum(dim=-1)
+        a = torch.clamp(actions, -1 + 1e-6, 1 - 1e-6)
+        raw_actions = torch.atanh(a)
+        log_prob = self.distribution.log_prob(raw_actions)
+        log_prob -= torch.log((torch.pi / 2) * (1 - a.pow(2)) + 1e-6)
+        return log_prob.sum(dim=-1)
 
     def act_inference(self, observations):
         actions_mean = self.actor(observations)

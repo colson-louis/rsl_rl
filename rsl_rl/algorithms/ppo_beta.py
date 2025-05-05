@@ -7,12 +7,12 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from rsl_rl.modules import ActorCritic, ActorCriticSG, ActorCriticBeta
+from rsl_rl.modules import ActorCriticBeta
 from rsl_rl.storage import RolloutStorage
 
 
-class PPO:
-    actor_critic: ActorCritic | ActorCriticSG | ActorCriticBeta
+class PPO_Beta:
+    actor_critic: ActorCriticBeta
 
     def __init__(
         self,
@@ -25,16 +25,14 @@ class PPO:
         value_loss_coef=1.0,
         entropy_coef=0.0,
         learning_rate=1e-3,
-        max_grad_norm=1.0,
+        max_grad_norm=0.5,
         use_clipped_value_loss=True,
         schedule="fixed",
-        desired_kl=0.01,
         device="cpu",
         **kwargs,
     ):
         self.device = device
 
-        self.desired_kl = desired_kl
         self.schedule = schedule
         self.learning_rate = learning_rate
 
@@ -75,7 +73,7 @@ class PPO:
         self.transition.values = self.actor_critic.evaluate(critic_obs).detach()
         self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(self.transition.actions).detach()
         self.transition.action_mean = self.actor_critic.action_mean.detach()
-        self.transition.action_sigma = self.actor_critic.action_std.detach()
+        self.transition.action_sigma = 0.0
         # need to record obs and critic_obs before env.step()
         self.transition.observations = obs
         self.transition.critic_observations = critic_obs
@@ -115,8 +113,8 @@ class PPO:
             advantages_batch,
             returns_batch,
             old_actions_log_prob_batch,
-            old_mu_batch,
-            old_sigma_batch,
+            _,
+            _,
             hid_states_batch,
             masks_batch,
         ) in generator:
@@ -125,34 +123,12 @@ class PPO:
             value_batch = self.actor_critic.evaluate(
                 critic_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[1]
             )
-            mu_batch = self.actor_critic.action_mean
-            sigma_batch = self.actor_critic.action_std
             entropy_batch = self.actor_critic.entropy
 
-            # KL
-            if self.desired_kl is not None and self.schedule == "adaptive":
-                with torch.inference_mode():
-                    kl = torch.sum(
-                        torch.log(sigma_batch / old_sigma_batch + 1.0e-5)
-                        + (torch.square(old_sigma_batch) + torch.square(old_mu_batch - mu_batch))
-                        / (2.0 * torch.square(sigma_batch))
-                        - 0.5,
-                        axis=-1,
-                    )
-                    kl_mean = torch.mean(kl)
-
-                    if kl_mean > self.desired_kl * 2.0:
-                        self.learning_rate = max(2e-5, self.learning_rate / 1.5)
-                    elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
-                        self.learning_rate = min(1e-3, self.learning_rate * 1.5)
-
-                    for param_group in self.optimizer.param_groups:
-                        param_group["lr"] = self.learning_rate
-
             # Surrogate loss
-            ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
-            surrogate = -torch.squeeze(advantages_batch) * ratio
-            surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(
+            ratio = torch.exp(actions_log_prob_batch - old_actions_log_prob_batch)
+            surrogate = -advantages_batch * ratio
+            surrogate_clipped = -advantages_batch * torch.clamp(
                 ratio, 1.0 - self.clip_param, 1.0 + self.clip_param
             )
             surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
