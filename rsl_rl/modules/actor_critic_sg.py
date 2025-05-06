@@ -32,8 +32,6 @@ class ActorCriticSG(nn.Module):
 
         # Policy
         self.actor = create_mlp(num_actor_obs, actor_hidden_dims, activation, num_actions)
-        # add tanh activation to the last layer
-        self.actor.add_module("tanh", nn.Tanh())
 
         # Value function
         self.critic = create_mlp(num_critic_obs, critic_hidden_dims, activation, 1)
@@ -46,11 +44,7 @@ class ActorCriticSG(nn.Module):
         self.log_std = nn.Parameter(torch.ones(num_actions) * torch.log(torch.tensor(init_noise_std)))
         self.distribution = None
         # disable args validation for speedup
-        Normal.set_default_validate_args = False
-
-        # seems that we get better performance without init
-        # self.init_memory_weights(self.memory_a, 0.001, 0.)
-        # self.init_memory_weights(self.memory_c, 0.001, 0.)
+        Normal.set_default_validate_args = True
 
     @staticmethod
     # not used at the moment
@@ -96,7 +90,7 @@ class ActorCriticSG(nn.Module):
         return log_prob.sum(dim=-1)
 
     def act_inference(self, observations):
-        actions_mean = self.actor(observations)
+        actions_mean = torch.tanh(self.actor(observations))
         return actions_mean
 
     def evaluate(self, critic_observations, **kwargs):
