@@ -75,7 +75,7 @@ class ActorCriticSG(nn.Module):
     def update_distribution(self, observations):  # squashed guassian as done in SAC
         mean = self.actor(observations)
         std = torch.exp(self.log_std)
-        self.distribution = Normal(mean, mean * 0.0 + std)
+        self.distribution = Normal(mean, mean * 0.0 + std + 1e-8)
 
     def act(self, observations, **kwargs):
         self.update_distribution(observations)
