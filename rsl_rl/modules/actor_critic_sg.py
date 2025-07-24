@@ -75,6 +75,7 @@ class ActorCriticSG(nn.Module):
     def update_distribution(self, observations):  # squashed guassian as done in SAC
         mean = self.actor(observations)
         std = torch.exp(self.log_std)
+        std = torch.clamp(std, min=1e-6, max=10.0)
         self.distribution = Normal(mean, mean * 0.0 + std)
 
     def act(self, observations, **kwargs):
@@ -85,8 +86,9 @@ class ActorCriticSG(nn.Module):
     def get_actions_log_prob(self, actions):
         a = torch.clamp(actions, -1 + 1e-6, 1 - 1e-6)
         raw_actions = torch.atanh(a)
+        # Enforcing Action Bound
         log_prob = self.distribution.log_prob(raw_actions)
-        log_prob -= torch.log((torch.pi / 2) * (1 - a.pow(2)) + 1e-6)
+        log_prob -= torch.log(torch.pi * (1 - a.pow(2)) + 1e-6)
         return log_prob.sum(dim=-1)
 
     def act_inference(self, observations):
