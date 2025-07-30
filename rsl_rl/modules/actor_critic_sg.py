@@ -88,7 +88,7 @@ class ActorCriticSG(nn.Module):
         raw_actions = torch.atanh(a)
         # Enforcing Action Bound
         log_prob = self.distribution.log_prob(raw_actions)
-        log_prob -= torch.log(torch.pi * (1 - a.pow(2)) + 1e-6)
+        log_prob -= torch.log((1 - a.pow(2)) + 1e-6)
         return log_prob.sum(dim=-1)
 
     def act_inference(self, observations):
