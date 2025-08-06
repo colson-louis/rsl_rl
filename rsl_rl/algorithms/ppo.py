@@ -107,78 +107,104 @@ class PPO:
             generator = self.storage.reccurent_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
         else:
             generator = self.storage.mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
-        for (
-            obs_batch,
-            critic_obs_batch,
-            actions_batch,
-            target_values_batch,
-            advantages_batch,
-            returns_batch,
-            old_actions_log_prob_batch,
-            old_mu_batch,
-            old_sigma_batch,
-            hid_states_batch,
-            masks_batch,
-        ) in generator:
-            self.actor_critic.act(obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
-            actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
-            value_batch = self.actor_critic.evaluate(
-                critic_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[1]
-            )
-            mu_batch = self.actor_critic.action_mean
-            sigma_batch = self.actor_critic.action_std
-            entropy_batch = self.actor_critic.entropy
-
-            # KL
-            if self.desired_kl is not None and self.schedule == "adaptive":
-                with torch.inference_mode():
-                    kl = torch.sum(
-                        torch.log(sigma_batch / old_sigma_batch + 1.0e-5)
-                        + (torch.square(old_sigma_batch) + torch.square(old_mu_batch - mu_batch))
-                        / (2.0 * torch.square(sigma_batch))
-                        - 0.5,
-                        axis=-1,
-                    )
-                    kl_mean = torch.mean(kl)
-
-                    if kl_mean > self.desired_kl * 2.0:
-                        self.learning_rate = max(1e-5, self.learning_rate / 1.5)
-                    elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
-                        self.learning_rate = min(1e-2, self.learning_rate * 1.5)
-
-                    for param_group in self.optimizer.param_groups:
-                        param_group["lr"] = self.learning_rate
-
-            # Surrogate loss
-            ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
-            surrogate = -torch.squeeze(advantages_batch) * ratio
-            surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(
-                ratio, 1.0 - self.clip_param, 1.0 + self.clip_param
-            )
-            surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
-
-            # Value function loss
-            if self.use_clipped_value_loss:
-                value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(
-                    -self.clip_param, self.clip_param
+        with torch.autograd.set_detect_anomaly(True, check_nan=True):
+            for (
+                obs_batch,
+                critic_obs_batch,
+                actions_batch,
+                target_values_batch,
+                advantages_batch,
+                returns_batch,
+                old_actions_log_prob_batch,
+                old_mu_batch,
+                old_sigma_batch,
+                hid_states_batch,
+                masks_batch,
+            ) in generator:
+                if torch.isnan(actions_batch).any() or torch.isinf(actions_batch).any():
+                    raise RuntimeError("actions_batch nan")
+                self.actor_critic.act(obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+                actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
+                value_batch = self.actor_critic.evaluate(
+                    critic_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[1]
                 )
-                value_losses = (value_batch - returns_batch).pow(2)
-                value_losses_clipped = (value_clipped - returns_batch).pow(2)
-                value_loss = torch.max(value_losses, value_losses_clipped).mean()
-            else:
-                value_loss = (returns_batch - value_batch).pow(2).mean()
+                mu_batch = self.actor_critic.action_mean
+                # if torch.isnan(mu_batch).any():
+                #     print("mu_batch nan")
+                #     exit()
+                sigma_batch = self.actor_critic.action_std
+                # if torch.isnan(sigma_batch).any():
+                #     print("sigma_batch nan")
+                #     exit()
+                entropy_batch = self.actor_critic.entropy
+                # if torch.isnan(entropy_batch).any():
+                #     print("entropy_batch nan")
+                #     exit()
 
-            entropy_loss = self.entropy_coef * entropy_batch.mean()
-            loss = surrogate_loss + self.value_loss_coef * value_loss - entropy_loss
-            # Gradient step
-            self.optimizer.zero_grad()
-            loss.backward()
-            nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
-            self.optimizer.step()
+                # KL
+                if self.desired_kl is not None and self.schedule == "adaptive":
+                    with torch.inference_mode():
+                        kl = torch.sum(
+                            torch.log(sigma_batch / old_sigma_batch + 1.0e-5)
+                            + (torch.square(old_sigma_batch) + torch.square(old_mu_batch - mu_batch))
+                            / (2.0 * torch.square(sigma_batch))
+                            - 0.5,
+                            axis=-1,
+                        )
+                        kl_mean = torch.mean(kl)
 
-            mean_value_loss += value_loss.item()
-            mean_surrogate_loss += surrogate_loss.item()
-            mean_entropy_loss -= entropy_loss.item()
+                        if kl_mean > self.desired_kl * 2.0:
+                            self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+                        elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
+                            self.learning_rate = min(1e-2, self.learning_rate * 1.5)
+
+                        for param_group in self.optimizer.param_groups:
+                            param_group["lr"] = self.learning_rate
+                if torch.isnan(actions_log_prob_batch).any():
+                    raise RuntimeError("actions_log_prob_batch nan")
+                delta = actions_log_prob_batch - old_actions_log_prob_batch.squeeze()
+                if torch.isnan(delta).any():
+                    raise RuntimeError("delta nan")
+                # Surrogate loss
+                ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
+                surrogate = -torch.squeeze(advantages_batch) * ratio
+                surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(
+                    ratio, 1.0 - self.clip_param, 1.0 + self.clip_param
+                )
+                surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
+                # if torch.isnan(surrogate_loss).any():
+                #     print("surrogate_loss nan")
+                #     exit()
+
+                # Value function loss
+                if self.use_clipped_value_loss:
+                    value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(
+                        -self.clip_param, self.clip_param
+                    )
+                    value_losses = (value_batch - returns_batch).pow(2)
+                    value_losses_clipped = (value_clipped - returns_batch).pow(2)
+                    value_loss = torch.max(value_losses, value_losses_clipped).mean()
+                else:
+                    value_loss = (returns_batch - value_batch).pow(2).mean()
+                # if torch.isnan(value_loss).any():
+                #     print("value_loss nan")
+                #     exit()
+
+                entropy_loss = self.entropy_coef * entropy_batch.mean()
+                # if torch.isnan(entropy_loss).any():
+                #     print("entropy_loss nan")
+                #     exit()
+                loss = surrogate_loss + self.value_loss_coef * value_loss - entropy_loss
+
+                # Gradient step
+                self.optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
+                self.optimizer.step()
+
+                mean_value_loss += value_loss.item()
+                mean_surrogate_loss += surrogate_loss.item()
+                mean_entropy_loss -= entropy_loss.item()
 
         num_updates = self.num_learning_epochs * self.num_mini_batches
         mean_value_loss /= num_updates

@@ -16,7 +16,7 @@ from rsl_rl.algorithms.ppo_beta import PPO_Beta
 from rsl_rl.env import VecEnv
 from rsl_rl.modules import ActorCritic, ActorCriticRecurrent, EmpiricalNormalization, ActorCriticBeta, ActorCriticSG
 from rsl_rl.utils import store_code_state
-
+import wandb
 
 class OnPolicyRunner:
     """On-policy runner for training and evaluation."""
@@ -199,6 +199,18 @@ class OnPolicyRunner:
                     ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
         mean_std = self.alg.actor_critic.action_std.mean()
         fps = int(self.num_steps_per_env * self.env.num_envs / (locs["collection_time"] + locs["learn_time"]))
+
+        for name, p in self.alg.actor_critic.named_parameters():
+            if p.grad is not None:
+                grad_norm = p.grad.data.norm().item()
+                self.writer.add_scalar(f"grad_norm/{name}", grad_norm, locs["it"])
+                # or log the distribution of gradient values:
+                #print((p.grad.data.shape))
+                #table = wandb.Table(
+                #    data=list(p.grad.data),
+                #    columns=["grad"],
+                #)
+                #self.writer.add_histogram(f"grads/{name}", wandb.plot.histogram(table, value="grad", title="grad histo"), locs["it"])
 
         self.writer.add_scalar("Loss/value_function", locs["mean_value_loss"], locs["it"])
         self.writer.add_scalar("Loss/surrogate", locs["mean_surrogate_loss"], locs["it"])
